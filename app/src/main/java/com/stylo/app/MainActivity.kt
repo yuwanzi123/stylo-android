@@ -53,12 +53,21 @@ class MainActivity : ComponentActivity() {
                 var showCaptureSheet by remember { mutableStateOf(false) }
                 var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
                 var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
+                var pendingRetakeUri by remember { mutableStateOf<Uri?>(null) }
 
                 val photoLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.TakePicture()
                 ) { success ->
                     if (success) Log.d("MainActivity", "Photo captured: $pendingPhotoUri")
                     pendingPhotoUri = null
+                }
+
+                val retakePhotoLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.TakePicture()
+                ) { success ->
+                    if (success) Log.d("MainActivity", "Retake photo captured: $pendingRetakeUri")
+                    // TODO: 处理 retake 后的新照片（更新当前图片或加入版本历史）
+                    pendingRetakeUri = null
                 }
 
                 val videoLauncher = rememberLauncherForActivityResult(
@@ -78,6 +87,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val launchCamera = { showCaptureSheet = true }
+
+                val launchRetakeCamera: () -> Unit = {
+                    val uri = createCameraUri(false)
+                    pendingRetakeUri = uri
+                    retakePhotoLauncher.launch(uri)
+                }
 
                 NavHost(navController = navController, startDestination = "login") {
                     composable("login") {
@@ -111,7 +126,8 @@ class MainActivity : ComponentActivity() {
                     ) { backStackEntry ->
                         ItemDetailScreen(
                             itemId = backStackEntry.arguments?.getString("itemId") ?: "",
-                            onBack = { navController.navigateUp() }
+                            onBack = { navController.navigateUp() },
+                            onRetakePhoto = launchRetakeCamera
                         )
                     }
                     composable("add_clothes") {

@@ -1,6 +1,5 @@
 package com.stylo.app
 
-import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -20,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -63,7 +62,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -105,7 +103,8 @@ private val AiReplies = listOf(
 @Composable
 fun ItemDetailScreen(
     itemId: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onRetakePhoto: () -> Unit = {}
 ) {
     var isEditMode by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
@@ -170,7 +169,7 @@ fun ItemDetailScreen(
             .background(Color.White)
     ) {
         if (isEditMode) {
-            EditMode(onBack = { isEditMode = false })
+            EditMode(onBack = { isEditMode = false }, onRetakePhoto = onRetakePhoto)
         } else {
             ViewMode(
                 selectedTab = selectedTab,
@@ -188,8 +187,7 @@ fun ItemDetailScreen(
 
 // ── Edit mode ──────────────────────────────────────────────────────────────────
 @Composable
-private fun EditMode(onBack: () -> Unit) {
-    val context = LocalContext.current
+private fun EditMode(onBack: () -> Unit, onRetakePhoto: () -> Unit) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -290,8 +288,8 @@ private fun EditMode(onBack: () -> Unit) {
             )
         }
 
+        // Image + version strip: large (pre-chat) vs compact (post-chat)
         if (!hasStartedChat) {
-            // Pre-chat: large image takes prominence, versions below, spacer fills gap
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -326,63 +324,75 @@ private fun EditMode(onBack: () -> Unit) {
                     )
                 }
             }
-            Spacer(modifier = Modifier.weight(1f))
         } else {
-            // Post-chat: image + version history collapse into one compact thumbnail strip (~68dp)
-            // so the chat LazyColumn below gets weight(1f) = the majority of screen height
-            Spacer(modifier = Modifier.height(8.dp))
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Post-chat header: 30% of screen height, fixed.
+            // Image takes weight(1f) inside so it fills whatever remains after the version strip,
+            // with no fixed-size floor that would leave empty space around it.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.3f),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                items(versions, key = { it.id }) { version ->
-                    val isSelected = version.id == selectedVersionId
-                    CompactVersionThumbnail(
-                        version = version,
-                        isSelected = isSelected,
-                        onSelect = { selectedVersionId = version.id },
-                        onDelete = {
-                            if (versions.size > 1) {
-                                val idx = versions.indexOf(version)
-                                versions.remove(version)
-                                if (selectedVersionId == version.id) {
-                                    selectedVersionId = versions[minOf(idx, versions.size - 1)].id
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(selectedVersion.color)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize().background(brightnessOverlay))
+                    Box(modifier = Modifier.fillMaxSize().background(warmthOverlay))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(versions, key = { it.id }) { version ->
+                        val isSelected = version.id == selectedVersionId
+                        CompactVersionThumbnail(
+                            version = version,
+                            isSelected = isSelected,
+                            onSelect = { selectedVersionId = version.id },
+                            onDelete = {
+                                if (versions.size > 1) {
+                                    val idx = versions.indexOf(version)
+                                    versions.remove(version)
+                                    if (selectedVersionId == version.id) {
+                                        selectedVersionId = versions[minOf(idx, versions.size - 1)].id
+                                    }
                                 }
-                            }
-                            // TODO: 调用版本删除 API
-                        },
-                        brightnessOverlay = if (isSelected) brightnessOverlay else Color.Transparent,
-                        warmthOverlay = if (isSelected) warmthOverlay else Color.Transparent
-                    )
+                                // TODO: 调用版本删除 API
+                            },
+                            brightnessOverlay = if (isSelected) brightnessOverlay else Color.Transparent,
+                            warmthOverlay = if (isSelected) warmthOverlay else Color.Transparent
+                        )
+                    }
                 }
             }
-            Spacer(modifier = Modifier.height(6.dp))
             Divider(color = NeutralMid.copy(alpha = 0.4f), thickness = 0.5.dp)
-            // Chat history fills all remaining vertical space.
-            // weight(1f) + fillMaxWidth() together ensure the column is measured at the
-            // correct fixed dimensions — without fillMaxWidth the width can collapse to
-            // wrap-content in Compose 1.5.x, breaking item layout inside.
-            // Arrangement.Top keeps messages pinned to the top; blank space sits below
-            // the last message (not between messages).
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(top = 12.dp, bottom = 8.dp),
-                verticalArrangement = Arrangement.Top
-            ) {
-                itemsIndexed(messages) { index, msg ->
-                    if (index > 0) Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        // Chat LazyColumn is ALWAYS a direct weight(1f) child of the outer Column —
+        // never inside a conditional branch — so Compose can measure it correctly
+        // every time. Pre-chat: empty (acts as Spacer). Post-chat: shows messages.
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (hasStartedChat) {
+                items(messages) { msg ->
                     if (msg.isUser) EditUserBubble(msg.text)
                     else EditAiMessage(msg.text)
                 }
                 if (isAiTyping) {
-                    item(key = "typing") {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        TypingIndicator()
-                    }
+                    item(key = "typing") { TypingIndicator() }
                 }
             }
         }
@@ -475,10 +485,8 @@ private fun EditMode(onBack: () -> Unit) {
                 text = "Retake photo",
                 color = NeutralDark,
                 fontSize = 13.sp,
-                // TODO: 接入重拍照片流程
-                modifier = Modifier.clickable {
-                    Toast.makeText(context, "Retake photo — coming soon", Toast.LENGTH_SHORT).show()
-                }
+                modifier = Modifier.clickable(onClick = onRetakePhoto)
+                // TODO: 处理 retake 后的新照片（更新当前图片或加入版本历史）
             )
         }
     }
