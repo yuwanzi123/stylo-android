@@ -131,22 +131,7 @@ fun ItemDetailScreen(
             onDismissRequest = { showFullscreenImage = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.92f))
-                    .clickable { showFullscreenImage = false },
-                contentAlignment = Alignment.Center
-            ) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = item.description,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp)
-                )
-            }
+            ZoomableFullscreenImage(url = imageUrl, onDismiss = { showFullscreenImage = false })
         }
     }
 
