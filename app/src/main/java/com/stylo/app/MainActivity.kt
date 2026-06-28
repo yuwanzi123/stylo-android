@@ -22,11 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.stylo.app.ui.theme.StyloTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -159,17 +157,14 @@ class MainActivity : ComponentActivity() {
                     composable("closet") {
                         ClosetListScreen(
                             onBack = { navController.navigateUp() },
-                            onItemClick = { itemId ->
-                                navController.navigate("item/$itemId")
+                            onItemClick = { item ->
+                                SelectedClosetItem.current = item
+                                navController.navigate("item_detail")
                             }
                         )
                     }
-                    composable(
-                        route = "item/{itemId}",
-                        arguments = listOf(navArgument("itemId") { type = NavType.StringType })
-                    ) { backStackEntry ->
+                    composable("item_detail") {
                         ItemDetailScreen(
-                            itemId = backStackEntry.arguments?.getString("itemId") ?: "",
                             onBack = { navController.navigateUp() },
                             onRetakePhoto = launchRetakeCamera
                         )

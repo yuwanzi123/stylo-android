@@ -46,6 +46,11 @@ object PendingReviewResults {
     var items: List<ReviewItem> = emptyList()
 }
 
+// 衣橱列表点击时填充，ItemDetailScreen 读取
+object SelectedClosetItem {
+    var current: ClosetItem? = null
+}
+
 object StyloApi {
     const val BASE_URL = "http://10.0.0.109:8000"
 
@@ -54,6 +59,22 @@ object StyloApi {
         .writeTimeout(300, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    fun deleteClosetItem(itemId: Int, onResult: (success: Boolean) -> Unit) {
+        val request = Request.Builder()
+            .url("$BASE_URL/closet/items/$itemId")
+            .delete()
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Handler(Looper.getMainLooper()).post { onResult(false) }
+            }
+            override fun onResponse(call: Call, response: Response) {
+                Handler(Looper.getMainLooper()).post { onResult(response.isSuccessful) }
+            }
+        })
+    }
 
     fun fetchClosetItems(onResult: (items: List<ClosetItem>?, error: String?) -> Unit) {
         val request = Request.Builder()

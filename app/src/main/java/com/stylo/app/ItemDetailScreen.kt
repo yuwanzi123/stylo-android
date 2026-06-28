@@ -41,7 +41,9 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Send
+import android.widget.Toast
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -62,12 +64,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -102,15 +107,24 @@ private val AiReplies = listOf(
 // ── Root screen ────────────────────────────────────────────────────────────────
 @Composable
 fun ItemDetailScreen(
-    itemId: String,
     onBack: () -> Unit,
     onRetakePhoto: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val item = SelectedClosetItem.current
+
+    if (item == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+
+    val imageUrl = "${StyloApi.BASE_URL}${item.imageUrl}"
     var isEditMode by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
     var noteText by remember { mutableStateOf("") }
     var showFullscreenImage by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
 
     if (showFullscreenImage) {
         Dialog(
@@ -120,15 +134,17 @@ fun ItemDetailScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black)
+                    .background(Color.Black.copy(alpha = 0.92f))
                     .clickable { showFullscreenImage = false },
                 contentAlignment = Alignment.Center
             ) {
-                Box(
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = item.description,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(3f / 4f)
-                        .background(BrandLightPurple)
+                        .padding(24.dp)
                 )
             }
         }
@@ -136,7 +152,7 @@ fun ItemDetailScreen(
 
     if (showDeleteDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
+            onDismissRequest = { if (!isDeleting) showDeleteDialog = false },
             title = {
                 Text(text = "Delete this item?", fontWeight = FontWeight.SemiBold, color = BrandDeepPurple)
             },
@@ -146,16 +162,36 @@ fun ItemDetailScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // TODO: 调用删除 API
-                        showDeleteDialog = false
-                        onBack()
+                        if (!isDeleting) {
+                            isDeleting = true
+                            StyloApi.deleteClosetItem(item.id) { success ->
+                                isDeleting = false
+                                if (success) {
+                                    showDeleteDialog = false
+                                    onBack()
+                                } else {
+                                    Toast.makeText(context, "Delete failed, please retry", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
                     }
                 ) {
-                    Text("Delete", color = Color(0xFFB00020))
+                    if (isDeleting) {
+                        CircularProgressIndicator(
+                            color = Color(0xFFB00020),
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    } else {
+                        Text("Delete", color = Color(0xFFB00020))
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
+                TextButton(
+                    onClick = { showDeleteDialog = false },
+                    enabled = !isDeleting
+                ) {
                     Text("Cancel", color = NeutralDark)
                 }
             },
@@ -172,6 +208,7 @@ fun ItemDetailScreen(
             EditMode(onBack = { isEditMode = false }, onRetakePhoto = onRetakePhoto)
         } else {
             ViewMode(
+                imageUrl = imageUrl,
                 selectedTab = selectedTab,
                 onTabSelected = { selectedTab = it },
                 noteText = noteText,
@@ -673,9 +710,10 @@ private fun EditAiMessage(text: String) {
     }
 }
 
-// ── View mode (unchanged from previous sprint) ─────────────────────────────────
+// ── View mode ──────────────────────────────────────────────────────────────────
 @Composable
 private fun ViewMode(
+    imageUrl: String,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     noteText: String,
@@ -721,9 +759,16 @@ private fun ViewMode(
                 .padding(horizontal = 20.dp)
                 .aspectRatio(3f / 4f)
                 .clip(RoundedCornerShape(16.dp))
-                .background(BrandLightPurple)
                 .clickable(onClick = onImageClick)
         ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BrandLightPurple),
+            )
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)

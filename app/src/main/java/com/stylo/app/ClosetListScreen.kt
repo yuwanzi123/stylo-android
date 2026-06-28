@@ -35,11 +35,16 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import coil.compose.AsyncImage
@@ -70,14 +75,26 @@ private val categories = listOf(
 @Composable
 fun ClosetListScreen(
     onBack: () -> Unit,
-    onItemClick: (String) -> Unit
+    onItemClick: (ClosetItem) -> Unit
 ) {
     var selectedCategory by remember { mutableStateOf("All") }
     var searchText by remember { mutableStateOf("") }
     var closetItems by remember { mutableStateOf<List<ClosetItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
+    // 每次进入（含从详情页返回）都重新拉取列表数据
+    var refreshKey by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshKey++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(refreshKey) {
+        if (refreshKey == 0) return@LaunchedEffect
+        isLoading = true
         StyloApi.fetchClosetItems { items, _ ->
             isLoading = false
             if (items != null) closetItems = items
@@ -142,7 +159,7 @@ fun ClosetListScreen(
                             modifier = Modifier
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(6.dp))
-                                .clickable { onItemClick(item.id.toString()) },
+                                .clickable { onItemClick(item) },
                         )
                     }
                 }
