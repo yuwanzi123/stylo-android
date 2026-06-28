@@ -26,6 +26,10 @@ object ProcessingTaskManager {
     var currentTask by mutableStateOf<TaskProgress?>(null)
         private set
 
+    // 设置后由 MainActivity 根级 LaunchedEffect 消费并触发导航，clearTask() 清除
+    var completedTaskId by mutableStateOf<String?>(null)
+        private set
+
     private var pollingJob: Job? = null
 
     fun startTracking(taskId: String) {
@@ -70,8 +74,8 @@ object ProcessingTaskManager {
                             withContext(Dispatchers.Main) {
                                 PendingReviewResults.taskId = taskId
                                 PendingReviewResults.items = items
+                                completedTaskId = taskId  // 触发 MainActivity 根级导航
                                 Log.d(TAG, "[$taskId] COMPLETED — ${items.size} item(s) ready")
-                                // Navigation triggered in Step 6
                             }
                             return@launch
                         }
@@ -98,5 +102,6 @@ object ProcessingTaskManager {
         pollingJob?.cancel()
         pollingJob = null
         currentTask = null
+        completedTaskId = null
     }
 }

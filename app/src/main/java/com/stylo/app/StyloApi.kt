@@ -174,31 +174,20 @@ fun pollTaskStatus(
     }
 }
 
-// onReadyToReview 在 Dispatchers.Main 执行，调用方可直接 navigate
+// taskId 确认后立刻回调 onTaskStarted（主线程），供调用方立即导航到处理中页面
 fun handleMediaUpload(
     context: Context,
     file: File,
     mimeType: String,
-    onReadyToReview: (() -> Unit)? = null,
+    onTaskStarted: (() -> Unit)? = null,
 ) {
     Log.d(TAG, "Uploading ${file.name} ($mimeType, ${file.length()} bytes)")
     StyloApi.uploadMedia(file, mimeType) { taskId, error ->
         if (taskId != null) {
-            Log.d(TAG, "Upload started, task_id=$taskId")
-            pollTaskStatus(taskId) { status, items, pollError ->
-                when (status) {
-                    "completed" -> {
-                        Log.d(TAG, "Completed! Found ${items?.size} items")
-                        PendingReviewResults.taskId = taskId
-                        PendingReviewResults.items = items ?: emptyList()
-                        onReadyToReview?.invoke()
-                    }
-                    "failed" -> {
-                        Log.e(TAG, "Failed: $pollError")
-                        Toast.makeText(context, "Processing failed", Toast.LENGTH_SHORT).show()
-                    }
-                    "processing" -> Log.d(TAG, "Still processing...")
-                }
+            Log.d(TAG, "Upload accepted, task_id=$taskId — starting tracker")
+            ProcessingTaskManager.startTracking(taskId)
+            Handler(Looper.getMainLooper()).post {
+                onTaskStarted?.invoke()
             }
         } else {
             Log.e(TAG, "Upload failed: $error")

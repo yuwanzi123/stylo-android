@@ -57,6 +57,17 @@ class MainActivity : ComponentActivity() {
                 var pendingVideoFile by remember { mutableStateOf<File?>(null) }
                 var pendingRetakeUri by remember { mutableStateOf<Uri?>(null) }
 
+                // 根级监听：任务完成后无论当前在哪个页面都能触发跳转
+                val completedTaskId = ProcessingTaskManager.completedTaskId
+                LaunchedEffect(completedTaskId) {
+                    if (completedTaskId != null) {
+                        navController.navigate("review_results") {
+                            popUpTo("processing_screen") { inclusive = true }
+                        }
+                        ProcessingTaskManager.clearTask()
+                    }
+                }
+
                 val photoLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.TakePicture()
                 ) { success ->
@@ -65,7 +76,7 @@ class MainActivity : ComponentActivity() {
                         val file = pendingPhotoFile
                         if (file != null && file.exists()) {
                             handleMediaUpload(context, file, "image/jpeg") {
-                                navController.navigate("review_results")
+                                navController.navigate("processing_screen")
                             }
                         }
                     }
@@ -89,7 +100,7 @@ class MainActivity : ComponentActivity() {
                         val file = pendingVideoFile
                         if (file != null && file.exists()) {
                             handleMediaUpload(context, file, "video/mp4") {
-                                navController.navigate("review_results")
+                                navController.navigate("processing_screen")
                             }
                         }
                     }
@@ -169,8 +180,11 @@ class MainActivity : ComponentActivity() {
                             onBack = { navController.navigateUp() },
                             onNavigateToShootingGuide = { navController.navigate("shooting_guide") },
                             onLaunchCamera = launchCamera,
-                            onUploadCompleted = { navController.navigate("review_results") },
+                            onUploadCompleted = { navController.navigate("processing_screen") },
                         )
+                    }
+                    composable("processing_screen") {
+                        ProcessingScreen()
                     }
                     composable("review_results") {
                         ReviewResultsScreen(
