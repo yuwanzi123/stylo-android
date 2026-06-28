@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,14 +30,19 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
+import coil.compose.AsyncImage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,17 +62,8 @@ private val NeutralLight     = Color(0xFFF1EFE8)
 private val NeutralMid       = Color(0xFFD3D1C7)
 private val NeutralDark      = Color(0xFF5F5E5A)
 
-// ── Placeholder data ──────────────────────────────────────────────────────────
 private val categories = listOf(
     "All", "Tops", "Bottoms", "Outerwear", "Dresses", "Shoes", "Accessories"
-)
-
-// Muted tones from brand palette — purely for placeholder layout verification
-private val placeholderColors = listOf(
-    Color(0xFFEEEDFE), Color(0xFFF1EFE8), Color(0xFFCECBF6),
-    Color(0xFFD3D1C7), Color(0xFFE4E2F8), Color(0xFFEDE9F8),
-    Color(0xFFF5F3EC), Color(0xFFDAD8F0), Color(0xFFEBE9F5),
-    Color(0xFFD8D6E8), Color(0xFFE8E6F2), Color(0xFFCCCADE),
 )
 
 // ── Root screen ───────────────────────────────────────────────────────────────
@@ -77,6 +74,15 @@ fun ClosetListScreen(
 ) {
     var selectedCategory by remember { mutableStateOf("All") }
     var searchText by remember { mutableStateOf("") }
+    var closetItems by remember { mutableStateOf<List<ClosetItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        StyloApi.fetchClosetItems { items, _ ->
+            isLoading = false
+            if (items != null) closetItems = items
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -97,21 +103,48 @@ fun ClosetListScreen(
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            // TODO: 接入真实衣橱数据
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 72.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(placeholderColors.size) { index ->
-                    ClosetItemCell(
-                        placeholderColor = placeholderColors[index],
-                        onClick = { onItemClick("item_$index") }
+            when {
+                isLoading -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(color = BrandPurple, strokeWidth = 2.dp)
+                }
+
+                closetItems.isEmpty() -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Your closet is empty. Add some clothes to get started!",
+                        color = NeutralDark,
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center,
                     )
+                }
+
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 8.dp),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 72.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(closetItems) { item ->
+                        AsyncImage(
+                            model = "${StyloApi.BASE_URL}${item.imageUrl}",
+                            contentDescription = item.description,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { onItemClick(item.id.toString()) },
+                        )
+                    }
                 }
             }
 
@@ -234,19 +267,6 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )
     }
-}
-
-// ── Item grid cell — pure image placeholder, no text overlays ────────────────
-@Composable
-private fun ClosetItemCell(placeholderColor: Color, onClick: () -> Unit) {
-    // TODO: 接入真实衣橱数据 — replace with AsyncImage/coil when data is available
-    Box(
-        modifier = Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(6.dp))
-            .background(placeholderColor)
-            .clickable(onClick = onClick)
-    )
 }
 
 // ── Floating search bar — semi-transparent pill, overlaid on the grid ────────

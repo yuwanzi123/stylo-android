@@ -33,6 +33,13 @@ data class ReviewItem(
     val description: String? = null,
 )
 
+data class ClosetItem(
+    val id: Int,
+    val filename: String,
+    val imageUrl: String,
+    val description: String,
+)
+
 // 轻量级单例，在 handleMediaUpload 完成时填充，ReviewResultsScreen 读取
 object PendingReviewResults {
     var taskId: String = ""
@@ -47,6 +54,42 @@ object StyloApi {
         .writeTimeout(300, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    fun fetchClosetItems(onResult: (items: List<ClosetItem>?, error: String?) -> Unit) {
+        val request = Request.Builder()
+            .url("$BASE_URL/closet/items")
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                try {
+                    val json = JSONObject(body ?: "{}")
+                    val arr = json.optJSONArray("items")
+                    val items = mutableListOf<ClosetItem>()
+                    arr?.let {
+                        for (i in 0 until it.length()) {
+                            val obj = it.getJSONObject(i)
+                            items.add(
+                                ClosetItem(
+                                    id          = obj.optInt("id"),
+                                    filename    = obj.optString("filename"),
+                                    imageUrl    = obj.optString("image_url"),
+                                    description = obj.optString("description"),
+                                )
+                            )
+                        }
+                    }
+                    Handler(Looper.getMainLooper()).post { onResult(items, null) }
+                } catch (e: Exception) {
+                    Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+                }
+            }
+        })
+    }
 
     fun uploadMedia(
         file: File,
