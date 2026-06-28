@@ -52,14 +52,25 @@ class MainActivity : ComponentActivity() {
                 var hasSeenCaptureGuide by remember { mutableStateOf(false) }
                 var showCaptureSheet by remember { mutableStateOf(false) }
                 var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+                var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
                 var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
+                var pendingVideoFile by remember { mutableStateOf<File?>(null) }
                 var pendingRetakeUri by remember { mutableStateOf<Uri?>(null) }
 
                 val photoLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.TakePicture()
                 ) { success ->
-                    if (success) Log.d("MainActivity", "Photo captured: $pendingPhotoUri")
+                    if (success) {
+                        Log.d("MainActivity", "Photo captured: $pendingPhotoUri")
+                        val file = pendingPhotoFile
+                        if (file != null && file.exists()) {
+                            handleMediaUpload(context, file, "image/jpeg") {
+                                navController.navigate("review_results")
+                            }
+                        }
+                    }
                     pendingPhotoUri = null
+                    pendingPhotoFile = null
                 }
 
                 val retakePhotoLauncher = rememberLauncherForActivityResult(
@@ -73,23 +84,33 @@ class MainActivity : ComponentActivity() {
                 val videoLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CaptureVideo()
                 ) { success ->
-                    if (success) Log.d("MainActivity", "Video captured: $pendingVideoUri")
+                    if (success) {
+                        Log.d("MainActivity", "Video captured: $pendingVideoUri")
+                        val file = pendingVideoFile
+                        if (file != null && file.exists()) {
+                            handleMediaUpload(context, file, "video/mp4") {
+                                navController.navigate("review_results")
+                            }
+                        }
+                    }
                     pendingVideoUri = null
+                    pendingVideoFile = null
                 }
 
-                fun createCameraUri(isVideo: Boolean): Uri {
+                fun createCameraFile(isVideo: Boolean): Pair<File, Uri> {
                     val ext = if (isVideo) ".mp4" else ".jpg"
                     val file = File(context.cacheDir, "camera/stylo_${System.currentTimeMillis()}$ext")
                     file.parentFile?.mkdirs()
-                    return FileProvider.getUriForFile(
+                    val uri = FileProvider.getUriForFile(
                         context, "${context.packageName}.fileprovider", file
                     )
+                    return Pair(file, uri)
                 }
 
                 val launchCamera = { showCaptureSheet = true }
 
                 val launchRetakeCamera: () -> Unit = {
-                    val uri = createCameraUri(false)
+                    val (_, uri) = createCameraFile(false)
                     pendingRetakeUri = uri
                     retakePhotoLauncher.launch(uri)
                 }
@@ -108,9 +129,21 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             isLoggedIn = false,
                             onNavigateToLogin = { navController.navigate("login") },
+                            onNavigateToAccount = { navController.navigate("account") },
                             onNavigateToCloset = { navController.navigate("closet") },
-                            onNavigateToAddClothes = { navController.navigate("add_clothes") }
+                            onNavigateToAddClothes = { navController.navigate("add_clothes") },
+                            onNavigateToOOTDFeed = { navController.navigate("ootd_feed") }
                         )
+                    }
+                    composable("account") {
+                        AccountScreen(
+                            isLoggedIn = false,
+                            onBack = { navController.navigateUp() },
+                            onSignIn = { navController.navigate("login") }
+                        )
+                    }
+                    composable("ootd_feed") {
+                        OOTDFeedScreen(onBack = { navController.navigateUp() })
                     }
                     composable("closet") {
                         ClosetListScreen(
@@ -135,7 +168,18 @@ class MainActivity : ComponentActivity() {
                             hasSeenCaptureGuide = hasSeenCaptureGuide,
                             onBack = { navController.navigateUp() },
                             onNavigateToShootingGuide = { navController.navigate("shooting_guide") },
-                            onLaunchCamera = launchCamera
+                            onLaunchCamera = launchCamera,
+                            onUploadCompleted = { navController.navigate("review_results") },
+                        )
+                    }
+                    composable("review_results") {
+                        ReviewResultsScreen(
+                            onBack = { navController.navigateUp() },
+                            onConfirmed = {
+                                navController.navigate("closet") {
+                                    popUpTo("review_results") { inclusive = true }
+                                }
+                            },
                         )
                     }
                     composable("shooting_guide") {
@@ -155,14 +199,16 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { showCaptureSheet = false },
                         onTakePhoto = {
                             showCaptureSheet = false
-                            val uri = createCameraUri(false)
+                            val (file, uri) = createCameraFile(false)
                             pendingPhotoUri = uri
+                            pendingPhotoFile = file
                             photoLauncher.launch(uri)
                         },
                         onRecordVideo = {
                             showCaptureSheet = false
-                            val uri = createCameraUri(true)
+                            val (file, uri) = createCameraFile(true)
                             pendingVideoUri = uri
+                            pendingVideoFile = file
                             videoLauncher.launch(uri)
                         }
                     )

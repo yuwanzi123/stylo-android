@@ -6,6 +6,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,6 +40,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,6 +52,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +69,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 private val BrandPurple     = Color(0xFF7F77DD)
@@ -76,18 +88,19 @@ private sealed class ChatItem {
     object OutfitCard : ChatItem()
 }
 
-private val sampleChat = listOf(
-    ChatItem.UserMsg("Show me a casual weekend look"),
-    ChatItem.AiMsg(
-        "Here's a relaxed, put-together look for the weekend — " +
-                "easy to wear but still intentional."
-    ),
-    ChatItem.OutfitCard,
-    ChatItem.UserMsg("Can you make it a bit more elevated?"),
-    ChatItem.AiMsg(
-        "Same energy, just a notch up. Swap the sneakers for loafers " +
-                "and layer a light linen jacket."
-    ),
+// TODO: 接入真实流行趋势图片数据（远期可能替换为商家推荐内容）
+private val trendingColors = listOf(
+    Color(0xFFE8D5B7),
+    Color(0xFFB8C9D4),
+    Color(0xFFD4B8C9),
+    Color(0xFFB8D4C0),
+)
+
+private val homeAiReplies = listOf(
+    "Great question! Here's what's catching my eye right now — effortlessly chic with a modern edge.",
+    "Love that direction. Let me put something together based on what's been trending lately.",
+    "On it! Here's a look that feels current and wearable at the same time.",
+    "Perfect timing. Here's a suggestion that blends what's popular with what actually works day-to-day."
 )
 
 // ── Root screen ───────────────────────────────────────────────────────────────
@@ -95,19 +108,46 @@ private val sampleChat = listOf(
 fun HomeScreen(
     isLoggedIn: Boolean = false,
     onNavigateToLogin: () -> Unit = {},
+    onNavigateToAccount: () -> Unit = {},
     onNavigateToCloset: () -> Unit = {},
-    onNavigateToAddClothes: () -> Unit = {}
+    onNavigateToAddClothes: () -> Unit = {},
+    onNavigateToOOTDFeed: () -> Unit = {}
 ) {
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
+    val messages = remember { mutableStateListOf<ChatItem>() }
+    var isAiTyping by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     var plusExpanded by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
+
+    fun sendMessage(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isBlank() || isAiTyping) return
+        messages.add(ChatItem.UserMsg(trimmed))
+        isAiTyping = true
+        scope.launch {
+            delay(900)
+            val replyIdx = messages.count { it is ChatItem.AiMsg } % homeAiReplies.size
+            messages.add(ChatItem.AiMsg(homeAiReplies[replyIdx]))
+            isAiTyping = false
+        }
+    }
+
+    LaunchedEffect(messages.size, isAiTyping) {
+        if (messages.isNotEmpty()) {
+            delay(50)
+            val total = messages.size + (if (isAiTyping) 1 else 0)
+            listState.animateScrollToItem(total - 1)
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
-        TopBar(isLoggedIn = isLoggedIn, onAvatarClick = onNavigateToLogin)
+        TopBar(isLoggedIn = isLoggedIn, onAvatarClick = onNavigateToAccount)
 
         LazyColumn(
             state = listState,
@@ -117,12 +157,18 @@ fun HomeScreen(
             contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            items(sampleChat) { item ->
+            if (messages.isEmpty()) {
+                item(key = "trending") { TrendingFashionCard() }
+            }
+            items(messages) { item ->
                 when (item) {
                     is ChatItem.UserMsg -> UserBubble(item.text)
                     is ChatItem.AiMsg -> AiTextMessage(item.text)
                     ChatItem.OutfitCard -> OutfitCardPlaceholder()
                 }
+            }
+            if (isAiTyping) {
+                item(key = "typing") { HomeTypingIndicator() }
             }
         }
 
@@ -138,7 +184,8 @@ fun HomeScreen(
                     .padding(bottom = 8.dp),
                 onDismiss = { plusExpanded = false },
                 onNavigateToCloset = onNavigateToCloset,
-                onNavigateToAddClothes = onNavigateToAddClothes
+                onNavigateToAddClothes = onNavigateToAddClothes,
+                onNavigateToOOTDFeed = onNavigateToOOTDFeed
             )
         }
 
@@ -153,10 +200,76 @@ fun HomeScreen(
             plusExpanded = plusExpanded,
             onPlusToggle = { plusExpanded = !plusExpanded },
             onSend = {
-                Log.d("HomeScreen", "Send: $inputText")
+                sendMessage(inputText)
                 inputText = ""
             }
         )
+    }
+}
+
+// ── Trending fashion card ─────────────────────────────────────────────────────
+@Composable
+private fun TrendingFashionCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, NeutralMid)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Here's what's trending in women's fashion right now",
+                color = NeutralDark,
+                fontSize = 15.sp,
+                lineHeight = 22.sp
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                repeat(2) { rowIndex ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        repeat(2) { colIndex ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(trendingColors[rowIndex * 2 + colIndex]),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Checkroom,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.55f),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTypingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "home-typing")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(600), repeatMode = RepeatMode.Reverse),
+        label = "home-typing-alpha"
+    )
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        Text(text = "• • •", color = NeutralDark.copy(alpha = alpha), fontSize = 18.sp)
     }
 }
 
@@ -188,11 +301,11 @@ private fun TopBar(isLoggedIn: Boolean, onAvatarClick: () -> Unit) {
                 .clickable(onClick = onAvatarClick),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = if (isLoggedIn) "U" else "?",
-                color = if (isLoggedIn) Color.White else NeutralDark,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = "Account",
+                tint = if (isLoggedIn) Color.White else BrandPurple,
+                modifier = Modifier.size(22.dp)
             )
         }
     }
@@ -426,7 +539,8 @@ private fun PlusMenu(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
     onNavigateToCloset: () -> Unit = {},
-    onNavigateToAddClothes: () -> Unit = {}
+    onNavigateToAddClothes: () -> Unit = {},
+    onNavigateToOOTDFeed: () -> Unit = {}
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -454,7 +568,7 @@ private fun PlusMenu(
                 iconTint = BrandPurple,
                 title = "OOTD Feed",
                 subtitle = "See what others wear",
-                onClick = { Log.d("HomeScreen", "OOTD Feed tapped"); onDismiss() }
+                onClick = { onDismiss(); onNavigateToOOTDFeed() }
             )
             // Amber icon is intentional — signals this photo is NOT saved to closet
             MenuRow(
