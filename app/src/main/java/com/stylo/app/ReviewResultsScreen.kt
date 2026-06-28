@@ -34,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,6 +77,7 @@ fun ReviewResultsScreen(
     val accepted = remember { mutableStateListOf(*Array(items.size) { true }) }
     val acceptedCount = accepted.count { it }
     var fullscreenImageUrl by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -124,12 +126,15 @@ fun ReviewResultsScreen(
 
         ConfirmBar(
             acceptedCount = acceptedCount,
+            isSubmitting = isSubmitting,
             onConfirm = {
+                isSubmitting = true
                 val toSubmit = items.filterIndexed { i, _ -> accepted[i] }
                 confirmSelectedItems(toSubmit, taskId) { success ->
                     if (success) {
                         onConfirmed()
                     } else {
+                        isSubmitting = false
                         Toast.makeText(context, "Failed to save items, please retry", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -299,6 +304,7 @@ private fun StateButton(
 @Composable
 private fun ConfirmBar(
     acceptedCount: Int,
+    isSubmitting: Boolean,
     onConfirm: () -> Unit,
 ) {
     Box(
@@ -309,7 +315,7 @@ private fun ConfirmBar(
     ) {
         Button(
             onClick = onConfirm,
-            enabled = acceptedCount > 0,
+            enabled = acceptedCount > 0 && !isSubmitting,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
@@ -319,15 +325,23 @@ private fun ConfirmBar(
                 disabledContainerColor = NeutralMid,
             ),
         ) {
-            Text(
-                text = if (acceptedCount > 0)
-                    "Add $acceptedCount item${if (acceptedCount != 1) "s" else ""} to closet"
-                else
-                    "No items selected",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-            )
+            if (isSubmitting) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                Text(
+                    text = if (acceptedCount > 0)
+                        "Add $acceptedCount item${if (acceptedCount != 1) "s" else ""} to closet"
+                    else
+                        "No items selected",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+            }
         }
     }
 }
