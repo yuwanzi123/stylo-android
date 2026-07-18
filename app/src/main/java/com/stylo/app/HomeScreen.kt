@@ -54,10 +54,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -70,7 +72,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 private val BrandPurple     = Color(0xFF7F77DD)
@@ -81,11 +82,15 @@ private val NeutralMid      = Color(0xFFD3D1C7)
 private val NeutralDark     = Color(0xFF5F5E5A)
 private val AmberAccent     = Color(0xFFFAC775)
 
-// ── Sample conversation data ──────────────────────────────────────────────────
+// ── Conversation data ────────────────────────────────────────────────────────
 private sealed class ChatItem {
     data class UserMsg(val text: String) : ChatItem()
     data class AiMsg(val text: String) : ChatItem()
-    object OutfitCard : ChatItem()
+    data class OutfitCardItem(
+        val caption: String,
+        val compositeImageUrl: String,
+        val items: List<OutfitItem>,
+    ) : ChatItem()
 }
 
 // TODO: 接入真实流行趋势图片数据（远期可能替换为商家推荐内容）
@@ -94,13 +99,6 @@ private val trendingColors = listOf(
     Color(0xFFB8C9D4),
     Color(0xFFD4B8C9),
     Color(0xFFB8D4C0),
-)
-
-private val homeAiReplies = listOf(
-    "Great question! Here's what's catching my eye right now — effortlessly chic with a modern edge.",
-    "Love that direction. Let me put something together based on what's been trending lately.",
-    "On it! Here's a look that feels current and wearable at the same time.",
-    "Perfect timing. Here's a suggestion that blends what's popular with what actually works day-to-day."
 )
 
 // ── Root screen ───────────────────────────────────────────────────────────────
@@ -113,24 +111,54 @@ fun HomeScreen(
     onNavigateToAddClothes: () -> Unit = {},
     onNavigateToOOTDFeed: () -> Unit = {}
 ) {
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val userId = remember { StyloApi.getOrCreateUserId(context) }
 
     val messages = remember { mutableStateListOf<ChatItem>() }
     var isAiTyping by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     var plusExpanded by remember { mutableStateOf(false) }
 
+    LaunchedEffect(userId) {
+        StyloApi.fetchChatHistory(userId) { history, _ ->
+            if (!history.isNullOrEmpty()) {
+                messages.clear()
+                history.forEach { m ->
+                    when {
+                        m.role == "user" -> messages.add(ChatItem.UserMsg(m.content ?: ""))
+                        m.type == "outfit_card" -> messages.add(
+                            ChatItem.OutfitCardItem(
+                                caption = m.caption ?: "",
+                                compositeImageUrl = m.compositeImageUrl ?: "",
+                                items = m.items,
+                            )
+                        )
+                        else -> messages.add(ChatItem.AiMsg(m.content ?: ""))
+                    }
+                }
+            }
+        }
+    }
+
     fun sendMessage(text: String) {
         val trimmed = text.trim()
         if (trimmed.isBlank() || isAiTyping) return
         messages.add(ChatItem.UserMsg(trimmed))
         isAiTyping = true
-        scope.launch {
-            delay(900)
-            val replyIdx = messages.count { it is ChatItem.AiMsg } % homeAiReplies.size
-            messages.add(ChatItem.AiMsg(homeAiReplies[replyIdx]))
+        StyloApi.sendChatMessage(userId, trimmed) { result, error ->
             isAiTyping = false
+            if (result != null && result.type == "outfit_card") {
+                messages.add(
+                    ChatItem.OutfitCardItem(
+                        caption = result.caption ?: "",
+                        compositeImageUrl = result.compositeImageUrl ?: "",
+                        items = result.items,
+                    )
+                )
+            } else {
+                messages.add(ChatItem.AiMsg(error ?: result?.caption ?: "抱歉，出了点问题，请再试一次。"))
+            }
         }
     }
 
@@ -164,7 +192,7 @@ fun HomeScreen(
                 when (item) {
                     is ChatItem.UserMsg -> UserBubble(item.text)
                     is ChatItem.AiMsg -> AiTextMessage(item.text)
-                    ChatItem.OutfitCard -> OutfitCardPlaceholder()
+                    is ChatItem.OutfitCardItem -> OutfitCard(item)
                 }
             }
             if (isAiTyping) {
@@ -347,9 +375,9 @@ private fun AiTextMessage(text: String) {
     }
 }
 
-// ── Outfit card (placeholder) ─────────────────────────────────────────────────
+// ── Outfit card ────────────────────────────────────────────────────────────────
 @Composable
-private fun OutfitCardPlaceholder() {
+private fun OutfitCard(item: ChatItem.OutfitCardItem) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -357,39 +385,27 @@ private fun OutfitCardPlaceholder() {
         border = BorderStroke(1.dp, NeutralMid)     // #D3D1C7
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Single outfit preview area — not individual item thumbnails
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(BrandLightPurple),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "✦", color = BrandPurple, fontSize = 32.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Outfit preview",
-                        color = BrandPurple.copy(alpha = 0.55f),
-                        fontSize = 13.sp
-                    )
-                }
+            if (item.compositeImageUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = "${StyloApi.BASE_URL}${item.compositeImageUrl}",
+                    contentDescription = "Outfit preview",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BrandLightPurple)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Casual Weekend",
-                color = BrandDeepPurple,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(3.dp))
-            Text(
-                text = "White linen shirt · Slim chinos · Clean sneakers",
-                color = NeutralDark,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
-            )
+            if (item.caption.isNotEmpty()) {
+                Text(
+                    text = item.caption,
+                    color = NeutralDark,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            }
         }
     }
 }

@@ -23,6 +23,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "StyloUpload"
@@ -39,6 +40,50 @@ data class ClosetItem(
     val imageUrl: String,
     val description: String,
 )
+
+data class OutfitItem(
+    val id: Int,
+    val imageUrl: String,
+    val category: String?,
+    val description: String?,
+)
+
+data class ChatOutfitResult(
+    val messageId: String,
+    val type: String,
+    val outfitId: String?,
+    val caption: String?,
+    val compositeImageUrl: String?,
+    val items: List<OutfitItem>,
+)
+
+data class ChatHistoryMessage(
+    val messageId: String,
+    val role: String,
+    val type: String,
+    val content: String?,
+    val outfitId: String?,
+    val caption: String?,
+    val compositeImageUrl: String?,
+    val items: List<OutfitItem>,
+)
+
+private fun parseOutfitItems(arr: JSONArray?): List<OutfitItem> {
+    val items = mutableListOf<OutfitItem>()
+    arr ?: return items
+    for (i in 0 until arr.length()) {
+        val obj = arr.getJSONObject(i)
+        items.add(
+            OutfitItem(
+                id = obj.optInt("id"),
+                imageUrl = obj.optString("image_url"),
+                category = obj.optString("category").takeIf { it.isNotEmpty() },
+                description = obj.optString("description").takeIf { it.isNotEmpty() },
+            )
+        )
+    }
+    return items
+}
 
 // 轻量级单例，在 handleMediaUpload 完成时填充，ReviewResultsScreen 读取
 object PendingReviewResults {
@@ -59,6 +104,101 @@ object StyloApi {
         .writeTimeout(300, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    fun getOrCreateUserId(context: Context): String {
+        val prefs = context.getSharedPreferences("stylo_prefs", Context.MODE_PRIVATE)
+        var id = prefs.getString("user_id", null)
+        if (id == null) {
+            id = UUID.randomUUID().toString()
+            prefs.edit().putString("user_id", id).apply()
+        }
+        return id
+    }
+
+    fun sendChatMessage(
+        userId: String,
+        text: String,
+        onResult: (result: ChatOutfitResult?, error: String?) -> Unit,
+    ) {
+        val jsonBody = JSONObject().apply {
+            put("user_id", userId)
+            put("text", text)
+        }
+        val request = Request.Builder()
+            .url("$BASE_URL/chat/message")
+            .post(jsonBody.toString().toRequestBody("application/json".toMediaTypeOrNull()))
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                if (!response.isSuccessful) {
+                    Handler(Looper.getMainLooper()).post { onResult(null, "HTTP ${response.code}: $body") }
+                    return
+                }
+                try {
+                    val json = JSONObject(body ?: "{}")
+                    val result = ChatOutfitResult(
+                        messageId = json.optString("message_id"),
+                        type = json.optString("type"),
+                        outfitId = json.optString("outfit_id").takeIf { it.isNotEmpty() },
+                        caption = json.optString("caption").takeIf { it.isNotEmpty() },
+                        compositeImageUrl = json.optString("composite_image_url").takeIf { it.isNotEmpty() },
+                        items = parseOutfitItems(json.optJSONArray("items")),
+                    )
+                    Handler(Looper.getMainLooper()).post { onResult(result, null) }
+                } catch (e: Exception) {
+                    Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+                }
+            }
+        })
+    }
+
+    fun fetchChatHistory(
+        userId: String,
+        onResult: (history: List<ChatHistoryMessage>?, error: String?) -> Unit,
+    ) {
+        val request = Request.Builder()
+            .url("$BASE_URL/chat/history?user_id=$userId")
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                try {
+                    val json = JSONObject(body ?: "{}")
+                    val arr = json.optJSONArray("messages")
+                    val history = mutableListOf<ChatHistoryMessage>()
+                    arr?.let {
+                        for (i in 0 until it.length()) {
+                            val obj = it.getJSONObject(i)
+                            history.add(
+                                ChatHistoryMessage(
+                                    messageId = obj.optString("message_id"),
+                                    role = obj.optString("role"),
+                                    type = obj.optString("type"),
+                                    content = obj.optString("content").takeIf { c -> c.isNotEmpty() },
+                                    outfitId = obj.optString("outfit_id").takeIf { c -> c.isNotEmpty() },
+                                    caption = obj.optString("caption").takeIf { c -> c.isNotEmpty() },
+                                    compositeImageUrl = obj.optString("composite_image_url").takeIf { c -> c.isNotEmpty() },
+                                    items = parseOutfitItems(obj.optJSONArray("items")),
+                                )
+                            )
+                        }
+                    }
+                    Handler(Looper.getMainLooper()).post { onResult(history, null) }
+                } catch (e: Exception) {
+                    Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+                }
+            }
+        })
+    }
 
     fun deleteClosetItem(itemId: Int, onResult: (success: Boolean) -> Unit) {
         val request = Request.Builder()
