@@ -39,6 +39,7 @@ data class ClosetItem(
     val filename: String,
     val imageUrl: String,
     val description: String,
+    val category: String? = null,
 )
 
 data class OutfitItem(
@@ -240,6 +241,7 @@ object StyloApi {
                                     filename    = obj.optString("filename"),
                                     imageUrl    = obj.optString("image_url"),
                                     description = obj.optString("description"),
+                                    category    = obj.optString("category").takeIf { it.isNotEmpty() },
                                 )
                             )
                         }

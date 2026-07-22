@@ -71,6 +71,17 @@ private val categories = listOf(
     "All", "Tops", "Bottoms", "Outerwear", "Dresses", "Shoes", "Accessories"
 )
 
+// UI tab label -> backend ClosetItem.category value. Backend enum (top/bottom/
+// outerwear/shoes/other) predates these tabs and is load-bearing for the outfit
+// recommender, so we map here instead of changing it. Dresses/Accessories have
+// no backend equivalent yet — intentionally unmapped, so selecting them shows empty.
+private val categoryToBackendValue = mapOf(
+    "Tops" to "top",
+    "Bottoms" to "bottom",
+    "Outerwear" to "outerwear",
+    "Shoes" to "shoes",
+)
+
 // ── Root screen ───────────────────────────────────────────────────────────────
 @Composable
 fun ClosetListScreen(
@@ -81,6 +92,10 @@ fun ClosetListScreen(
     var searchText by remember { mutableStateOf("") }
     var closetItems by remember { mutableStateOf<List<ClosetItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    val filteredItems = remember(closetItems, selectedCategory) {
+        if (selectedCategory == "All") closetItems
+        else closetItems.filter { it.category == categoryToBackendValue[selectedCategory] }
+    }
 
     // 每次进入（含从详情页返回）都重新拉取列表数据
     var refreshKey by remember { mutableIntStateOf(0) }
@@ -128,7 +143,7 @@ fun ClosetListScreen(
                     CircularProgressIndicator(color = BrandPurple, strokeWidth = 2.dp)
                 }
 
-                closetItems.isEmpty() -> Box(
+                filteredItems.isEmpty() -> Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 32.dp),
@@ -151,7 +166,7 @@ fun ClosetListScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    items(closetItems) { item ->
+                    items(filteredItems) { item ->
                         AsyncImage(
                             model = "${StyloApi.BASE_URL}${item.imageUrl}",
                             contentDescription = item.description,
