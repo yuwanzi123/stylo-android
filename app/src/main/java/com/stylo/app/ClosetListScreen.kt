@@ -51,6 +51,8 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -311,6 +313,7 @@ private fun FloatingSearchBar(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(28.dp)
+    val focusRequester = remember { FocusRequester() }
     // No shadow() here — shadow() forces a graphicsLayer that breaks semi-transparent
     // backgrounds on many devices. Border gives the floating feel without that side-effect.
     Row(
@@ -320,6 +323,12 @@ private fun FloatingSearchBar(
             .clip(shape)
             // alpha = 0.75f: grid cells must be visible through this during scroll
             .background(Color.White.copy(alpha = 0.75f))
+            // Row had no pointer-consuming modifier of its own, so taps landing on the
+            // padding/placeholder area (outside the BasicTextField's tight hit box) fell
+            // through to the grid item beneath. Clickable both consumes those taps and
+            // focuses the field, so the whole pill acts as the tap target, not just the
+            // text glyphs.
+            .clickable(onClick = { focusRequester.requestFocus() })
             .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -343,7 +352,9 @@ private fun FloatingSearchBar(
                 onValueChange = onSearchChange,
                 textStyle = TextStyle(color = BrandDeepPurple, fontSize = 14.sp),
                 cursorBrush = SolidColor(BrandPurple),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearch() })
