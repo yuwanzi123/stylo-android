@@ -98,7 +98,7 @@ object SelectedClosetItem {
 }
 
 object StyloApi {
-    const val BASE_URL = "http://10.0.0.109:8000"
+    const val BASE_URL = "http://100.97.248.72:8000"
 
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)

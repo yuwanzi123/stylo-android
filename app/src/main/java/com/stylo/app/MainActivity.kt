@@ -266,7 +266,7 @@ fun MainScreen() {
                         .build()
 
                     val request = Request.Builder()
-                        .url("http://10.0.0.109:8000/upload-video")
+                        .url("${StyloApi.BASE_URL}/upload-video")
                         .post(requestBody)
                         .build()
 
