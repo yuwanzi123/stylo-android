@@ -1,6 +1,7 @@
 package com.stylo.app
 
 import android.content.Context
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -386,6 +387,20 @@ fun handleMediaUpload(
                 Toast.makeText(context, "Upload failed: $error", Toast.LENGTH_LONG).show()
             }
         }
+    }
+}
+
+// Copies a content:// Uri (from a photo library / files / document picker) into a
+// cache file and feeds it through the same upload pipeline as camera capture.
+fun uploadPickedMedia(context: Context, uri: Uri, onTaskStarted: (() -> Unit)? = null) {
+    val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+    val ext = if (mimeType.startsWith("video/")) ".mp4" else ".jpg"
+    CoroutineScope(Dispatchers.IO).launch {
+        val tempFile = File(context.cacheDir, "picked_upload_${System.currentTimeMillis()}$ext")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            tempFile.outputStream().use { output -> input.copyTo(output) }
+        }
+        handleMediaUpload(context, tempFile, mimeType, onTaskStarted)
     }
 }
 

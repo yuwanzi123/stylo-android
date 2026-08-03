@@ -5,10 +5,6 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import java.io.File
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -64,15 +60,7 @@ fun AddClothesScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             Log.d("AddClothesScreen", "Gallery picked: $uri")
-            val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
-            val ext = if (mimeType.startsWith("video/")) ".mp4" else ".jpg"
-            CoroutineScope(Dispatchers.IO).launch {
-                val tempFile = File(context.cacheDir, "gallery_upload$ext")
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    tempFile.outputStream().use { output -> input.copyTo(output) }
-                }
-                handleMediaUpload(context, tempFile, mimeType, onUploadCompleted)
-            }
+            uploadPickedMedia(context, uri, onUploadCompleted)
         }
     }
 

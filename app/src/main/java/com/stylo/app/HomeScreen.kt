@@ -1,6 +1,5 @@
 package com.stylo.app
 
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,8 +20,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -36,14 +35,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -57,8 +61,10 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import coil.compose.AsyncImage
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -69,6 +75,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -80,7 +90,6 @@ private val BrandLightPurple = Color(0xFFEEEDFE)
 private val NeutralLight    = Color(0xFFF1EFE8)
 private val NeutralMid      = Color(0xFFD3D1C7)
 private val NeutralDark     = Color(0xFF5F5E5A)
-private val AmberAccent     = Color(0xFFFAC775)
 
 // ── Conversation data ────────────────────────────────────────────────────────
 private sealed class ChatItem {
@@ -93,14 +102,6 @@ private sealed class ChatItem {
     ) : ChatItem()
 }
 
-// TODO: 接入真实流行趋势图片数据（远期可能替换为商家推荐内容）
-private val trendingColors = listOf(
-    Color(0xFFE8D5B7),
-    Color(0xFFB8C9D4),
-    Color(0xFFD4B8C9),
-    Color(0xFFB8D4C0),
-)
-
 // ── Root screen ───────────────────────────────────────────────────────────────
 @Composable
 fun HomeScreen(
@@ -109,41 +110,65 @@ fun HomeScreen(
     onNavigateToAccount: () -> Unit = {},
     onNavigateToCloset: () -> Unit = {},
     onNavigateToAddClothes: () -> Unit = {},
-    onNavigateToOOTDFeed: () -> Unit = {}
+    onNavigateToOOTDFeed: () -> Unit = {},
+    onNavigateToTheDrop: () -> Unit = {},
+    onPickPhotoLibrary: () -> Unit = {},
+    onPickCamera: () -> Unit = {},
+    onPickFiles: () -> Unit = {}
 ) {
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val userId = remember { StyloApi.getOrCreateUserId(context) }
 
     val messages = remember { mutableStateListOf<ChatItem>() }
+    val historyMessages = remember { mutableStateListOf<ChatItem>() }
+    var historyFetched by remember { mutableStateOf(false) }
+    var historyVisible by remember { mutableStateOf(false) }
     var isAiTyping by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     var plusExpanded by remember { mutableStateOf(false) }
+    var isChatExpanded by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(userId) {
+    fun collapseChat() {
+        isChatExpanded = false
+        focusManager.clearFocus()
+    }
+
+    // 历史消息只在首次展开时拉取一次并缓存到 historyMessages；之后的显示/隐藏切换只改 historyVisible，不再请求接口
+    fun toggleHistory() {
+        if (historyVisible) {
+            historyVisible = false
+            return
+        }
+        if (historyFetched) {
+            historyVisible = true
+            return
+        }
         StyloApi.fetchChatHistory(userId) { history, _ ->
-            if (!history.isNullOrEmpty()) {
-                messages.clear()
-                history.forEach { m ->
-                    when {
-                        m.role == "user" -> messages.add(ChatItem.UserMsg(m.content ?: ""))
-                        m.type == "outfit_card" -> messages.add(
-                            ChatItem.OutfitCardItem(
-                                caption = m.caption ?: "",
-                                compositeImageUrl = m.compositeImageUrl ?: "",
-                                items = m.items,
-                            )
+            historyMessages.clear()
+            history?.forEach { m ->
+                when {
+                    m.role == "user" -> historyMessages.add(ChatItem.UserMsg(m.content ?: ""))
+                    m.type == "outfit_card" -> historyMessages.add(
+                        ChatItem.OutfitCardItem(
+                            caption = m.caption ?: "",
+                            compositeImageUrl = m.compositeImageUrl ?: "",
+                            items = m.items,
                         )
-                        else -> messages.add(ChatItem.AiMsg(m.content ?: ""))
-                    }
+                    )
+                    else -> historyMessages.add(ChatItem.AiMsg(m.content ?: ""))
                 }
             }
+            historyFetched = true
+            historyVisible = true
         }
     }
 
     fun sendMessage(text: String) {
         val trimmed = text.trim()
         if (trimmed.isBlank() || isAiTyping) return
+        isChatExpanded = true
         messages.add(ChatItem.UserMsg(trimmed))
         isAiTyping = true
         StyloApi.sendChatMessage(userId, trimmed) { result, error ->
@@ -157,7 +182,7 @@ fun HomeScreen(
                     )
                 )
             } else {
-                messages.add(ChatItem.AiMsg(error ?: result?.caption ?: "抱歉，出了点问题，请再试一次。"))
+                messages.add(ChatItem.AiMsg(error ?: result?.caption ?: "Sorry, something went wrong. Please try again."))
             }
         }
     }
@@ -175,28 +200,68 @@ fun HomeScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        TopBar(isLoggedIn = isLoggedIn, onAvatarClick = onNavigateToAccount)
+        TopBar(
+            isLoggedIn = isLoggedIn,
+            onAvatarClick = onNavigateToAccount
+        )
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+        if (isChatExpanded) {
+            FeatureGridCompact(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                onNavigateToAddClothes = onNavigateToAddClothes,
+                onNavigateToCloset = onNavigateToCloset,
+                onNavigateToOOTDFeed = onNavigateToOOTDFeed,
+                onNavigateToTheDrop = onNavigateToTheDrop,
+                onCollapse = ::collapseChat
+            )
+        } else {
+            TopFeatureGrid(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                onNavigateToAddClothes = onNavigateToAddClothes,
+                onNavigateToCloset = onNavigateToCloset,
+                onNavigateToOOTDFeed = onNavigateToOOTDFeed,
+                onNavigateToTheDrop = onNavigateToTheDrop
+            )
+        }
+
+        AnimatedVisibility(
+            visible = isChatExpanded,
+            modifier = if (isChatExpanded) Modifier.weight(1f) else Modifier
         ) {
-            if (messages.isEmpty()) {
-                item(key = "trending") { TrendingFashionCard() }
-            }
-            items(messages) { item ->
-                when (item) {
-                    is ChatItem.UserMsg -> UserBubble(item.text)
-                    is ChatItem.AiMsg -> AiTextMessage(item.text)
-                    is ChatItem.OutfitCardItem -> OutfitCard(item)
+            Column(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    if (historyVisible) {
+                        items(historyMessages) { item -> ChatItemRow(item) }
+                    }
+                    items(messages) { item -> ChatItemRow(item) }
+                    if (isAiTyping) {
+                        item(key = "typing") { HomeTypingIndicator() }
+                    }
                 }
-            }
-            if (isAiTyping) {
-                item(key = "typing") { HomeTypingIndicator() }
+
+                // Pinned above the input row, doesn't scroll with the list
+                Text(
+                    text = if (historyVisible) "Hide history" else "View history",
+                    color = BrandPurple,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { toggleHistory() }
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
             }
         }
 
@@ -211,9 +276,9 @@ fun HomeScreen(
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 8.dp),
                 onDismiss = { plusExpanded = false },
-                onNavigateToCloset = onNavigateToCloset,
-                onNavigateToAddClothes = onNavigateToAddClothes,
-                onNavigateToOOTDFeed = onNavigateToOOTDFeed
+                onPickPhotoLibrary = onPickPhotoLibrary,
+                onPickCamera = onPickCamera,
+                onPickFiles = onPickFiles
             )
         }
 
@@ -225,6 +290,7 @@ fun HomeScreen(
         InputRow(
             inputText = inputText,
             onInputChange = { inputText = it },
+            onFocusGained = { isChatExpanded = true },
             plusExpanded = plusExpanded,
             onPlusToggle = { plusExpanded = !plusExpanded },
             onSend = {
@@ -235,53 +301,174 @@ fun HomeScreen(
     }
 }
 
-// ── Trending fashion card ─────────────────────────────────────────────────────
+// ── Top feature grid (main tabs) ──────────────────────────────────────────────
 @Composable
-private fun TrendingFashionCard() {
+private fun TopFeatureGrid(
+    modifier: Modifier = Modifier,
+    onNavigateToAddClothes: () -> Unit,
+    onNavigateToCloset: () -> Unit,
+    onNavigateToOOTDFeed: () -> Unit,
+    onNavigateToTheDrop: () -> Unit
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            FeatureTile(
+                Icons.Default.Add, "Add Clothes",
+                iconSize = 26.dp, fontSize = 13.sp,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = onNavigateToAddClothes
+            )
+            FeatureTile(
+                Icons.Default.Checkroom, "My Closet",
+                iconSize = 26.dp, fontSize = 13.sp,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = onNavigateToCloset
+            )
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            FeatureTile(
+                Icons.Default.People, "OOTD Feed",
+                iconSize = 26.dp, fontSize = 13.sp,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = onNavigateToOOTDFeed
+            )
+            FeatureTile(
+                Icons.Default.Whatshot, "The Drop",
+                iconSize = 26.dp, fontSize = 13.sp,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = onNavigateToTheDrop
+            )
+        }
+    }
+}
+
+// 1x4 collapsed strip shown while the chat area is expanded — tiles stay tappable, just smaller.
+@Composable
+private fun FeatureGridCompact(
+    modifier: Modifier = Modifier,
+    onNavigateToAddClothes: () -> Unit,
+    onNavigateToCloset: () -> Unit,
+    onNavigateToOOTDFeed: () -> Unit,
+    onNavigateToTheDrop: () -> Unit,
+    onCollapse: () -> Unit
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FeatureTile(
+                Icons.Default.Add, "Add Clothes",
+                iconSize = 18.dp,
+                modifier = Modifier.weight(1f).height(56.dp),
+                compact = true,
+                onClick = onNavigateToAddClothes
+            )
+            FeatureTile(
+                Icons.Default.Checkroom, "My Closet",
+                iconSize = 18.dp,
+                modifier = Modifier.weight(1f).height(56.dp),
+                compact = true,
+                onClick = onNavigateToCloset
+            )
+            FeatureTile(
+                Icons.Default.People, "OOTD Feed",
+                iconSize = 18.dp,
+                modifier = Modifier.weight(1f).height(56.dp),
+                compact = true,
+                onClick = onNavigateToOOTDFeed
+            )
+            FeatureTile(
+                Icons.Default.Whatshot, "The Drop",
+                iconSize = 18.dp,
+                modifier = Modifier.weight(1f).height(56.dp),
+                compact = true,
+                onClick = onNavigateToTheDrop
+            )
+        }
+
+        // Collapse back to the 2x2 default grid — centered below the tile row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(NeutralLight)
+                    .clickable(onClick = onCollapse),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Collapse to grid",
+                    tint = BrandDeepPurple,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeatureTile(
+    icon: ImageVector,
+    label: String,
+    iconSize: Dp,
+    fontSize: TextUnit = TextUnit.Unspecified,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    onClick: () -> Unit
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, NeutralMid)
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(if (compact) 14.dp else 20.dp),
+        colors = CardDefaults.cardColors(containerColor = BrandLightPurple),
+        border = BorderStroke(1.dp, BrandPurple.copy(alpha = 0.18f))
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = if (compact) 4.dp else 12.dp, vertical = if (compact) 3.dp else 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = "Here's what's trending in women's fashion right now",
-                color = NeutralDark,
-                fontSize = 15.sp,
-                lineHeight = 22.sp
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = BrandPurple,
+                modifier = Modifier.size(iconSize)
             )
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                repeat(2) { rowIndex ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        repeat(2) { colIndex ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(trendingColors[rowIndex * 2 + colIndex]),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Checkroom,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.55f),
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+            if (!compact) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = label,
+                    color = BrandDeepPurple,
+                    fontSize = fontSize,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -303,7 +490,10 @@ private fun HomeTypingIndicator() {
 
 // ── Top bar ───────────────────────────────────────────────────────────────────
 @Composable
-private fun TopBar(isLoggedIn: Boolean, onAvatarClick: () -> Unit) {
+private fun TopBar(
+    isLoggedIn: Boolean,
+    onAvatarClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -317,30 +507,44 @@ private fun TopBar(isLoggedIn: Boolean, onAvatarClick: () -> Unit) {
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold
         )
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                // Logged-in: solid purple avatar background
-                // Anonymous: semi-transparent purple with "?"
-                .background(
-                    if (isLoggedIn) BrandPurple else BrandPurple.copy(alpha = 0.2f)
-                )
-                .clickable(onClick = onAvatarClick),
-            contentAlignment = Alignment.Center
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Person,
-                contentDescription = "Account",
-                tint = if (isLoggedIn) Color.White else BrandPurple,
-                modifier = Modifier.size(22.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    // Logged-in: solid purple avatar background
+                    // Anonymous: semi-transparent purple with "?"
+                    .background(
+                        if (isLoggedIn) BrandPurple else BrandPurple.copy(alpha = 0.2f)
+                    )
+                    .clickable(onClick = onAvatarClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = "Account",
+                    tint = if (isLoggedIn) Color.White else BrandPurple,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
     }
     Divider(color = NeutralMid.copy(alpha = 0.5f), thickness = 0.5.dp)
 }
 
 // ── Chat bubbles ──────────────────────────────────────────────────────────────
+@Composable
+private fun ChatItemRow(item: ChatItem) {
+    when (item) {
+        is ChatItem.UserMsg -> UserBubble(item.text)
+        is ChatItem.AiMsg -> AiTextMessage(item.text)
+        is ChatItem.OutfitCardItem -> OutfitCard(item)
+    }
+}
+
 @Composable
 private fun UserBubble(text: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -443,6 +647,7 @@ private fun QuotaBanner(onSignIn: () -> Unit) {
 private fun InputRow(
     inputText: String,
     onInputChange: (String) -> Unit,
+    onFocusGained: () -> Unit,
     plusExpanded: Boolean,
     onPlusToggle: () -> Unit,
     onSend: () -> Unit
@@ -478,7 +683,9 @@ private fun InputRow(
                 onValueChange = onInputChange,
                 textStyle = TextStyle(color = BrandDeepPurple, fontSize = 15.sp),
                 cursorBrush = SolidColor(BrandPurple),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { if (it.isFocused) onFocusGained() },
                 maxLines = 4
             )
         }
@@ -554,9 +761,9 @@ private fun PlusButton(
 private fun PlusMenu(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
-    onNavigateToCloset: () -> Unit = {},
-    onNavigateToAddClothes: () -> Unit = {},
-    onNavigateToOOTDFeed: () -> Unit = {}
+    onPickPhotoLibrary: () -> Unit = {},
+    onPickCamera: () -> Unit = {},
+    onPickFiles: () -> Unit = {}
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -566,37 +773,25 @@ private fun PlusMenu(
     ) {
         Column(modifier = Modifier.padding(vertical = 4.dp)) {
             MenuRow(
-                icon = Icons.Default.Add,
+                icon = Icons.Default.PhotoLibrary,
                 iconTint = BrandPurple,
-                title = "Add clothes",
-                subtitle = "Upload to your closet",
-                onClick = { onDismiss(); onNavigateToAddClothes() }
+                title = "Photo Library",
+                subtitle = "Choose from your photos",
+                onClick = { onDismiss(); onPickPhotoLibrary() }
             )
             MenuRow(
-                icon = Icons.Default.Checkroom,
+                icon = Icons.Default.CameraAlt,
                 iconTint = BrandPurple,
-                title = "My closet",
-                subtitle = "Browse saved items",
-                onClick = { onDismiss(); onNavigateToCloset() }
+                title = "Camera",
+                subtitle = "Take a new photo or video",
+                onClick = { onDismiss(); onPickCamera() }
             )
             MenuRow(
-                icon = Icons.Default.People,
+                icon = Icons.Default.Folder,
                 iconTint = BrandPurple,
-                title = "OOTD Feed",
-                subtitle = "See what others wear",
-                onClick = { onDismiss(); onNavigateToOOTDFeed() }
-            )
-            // Amber icon is intentional — signals this photo is NOT saved to closet
-            MenuRow(
-                icon = Icons.Default.AddPhotoAlternate,
-                iconTint = AmberAccent,
-                title = "Add reference photo",
-                subtitle = "Not saved to closet",
-                onClick = {
-                    // TODO: 触发参考图上传逻辑
-                    Log.d("HomeScreen", "Add reference photo tapped")
-                    onDismiss()
-                }
+                title = "Files",
+                subtitle = "Pick a file from your device",
+                onClick = { onDismiss(); onPickFiles() }
             )
         }
     }

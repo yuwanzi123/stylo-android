@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
@@ -106,6 +107,22 @@ class MainActivity : ComponentActivity() {
                     pendingVideoFile = null
                 }
 
+                val photoLibraryLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.PickVisualMedia()
+                ) { uri: Uri? ->
+                    uri?.let {
+                        uploadPickedMedia(context, it) { navController.navigate("processing_screen") }
+                    }
+                }
+
+                val filesLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument()
+                ) { uri: Uri? ->
+                    uri?.let {
+                        uploadPickedMedia(context, it) { navController.navigate("processing_screen") }
+                    }
+                }
+
                 fun createCameraFile(isVideo: Boolean): Pair<File, Uri> {
                     val ext = if (isVideo) ".mp4" else ".jpg"
                     val file = File(context.cacheDir, "camera/stylo_${System.currentTimeMillis()}$ext")
@@ -117,6 +134,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val launchCamera = { showCaptureSheet = true }
+
+                val onPickCamera: () -> Unit = {
+                    if (hasSeenCaptureGuide) launchCamera() else navController.navigate("shooting_guide")
+                }
 
                 val launchRetakeCamera: () -> Unit = {
                     val (_, uri) = createCameraFile(false)
@@ -141,8 +162,19 @@ class MainActivity : ComponentActivity() {
                             onNavigateToAccount = { navController.navigate("account") },
                             onNavigateToCloset = { navController.navigate("closet") },
                             onNavigateToAddClothes = { navController.navigate("add_clothes") },
-                            onNavigateToOOTDFeed = { navController.navigate("ootd_feed") }
+                            onNavigateToOOTDFeed = { navController.navigate("ootd_feed") },
+                            onNavigateToTheDrop = { navController.navigate("the_drop") },
+                            onPickPhotoLibrary = {
+                                photoLibraryLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            onPickCamera = onPickCamera,
+                            onPickFiles = { filesLauncher.launch(arrayOf("image/*", "video/*")) }
                         )
+                    }
+                    composable("the_drop") {
+                        TheDropScreen(onBack = { navController.navigateUp() })
                     }
                     composable("account") {
                         AccountScreen(
