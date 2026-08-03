@@ -99,6 +99,15 @@ fun ClosetListScreen(
         else closetItems.filter { it.category == categoryToBackendValue[selectedCategory] }
     }
 
+    // null = not searching (browse mode, category tabs apply). Non-null = search is active
+    // and takes over the grid entirely — a semantic match can legitimately fall outside the
+    // currently selected category tab, so search results are shown unfiltered by tab rather
+    // than intersected with it. Clearing the search text drops back to filteredItems.
+    var searchResults by remember { mutableStateOf<List<ClosetItem>?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
+    val activeSearchResults = searchResults
+    val displayItems = activeSearchResults ?: filteredItems
+
     // 每次进入（含从详情页返回）都重新拉取列表数据
     var refreshKey by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -138,14 +147,28 @@ fun ClosetListScreen(
                 .fillMaxWidth()
         ) {
             when {
-                isLoading -> Box(
+                isLoading || isSearching -> Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(color = BrandPurple, strokeWidth = 2.dp)
                 }
 
-                filteredItems.isEmpty() -> Box(
+                activeSearchResults != null && activeSearchResults.isEmpty() -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "No items match your search.",
+                        color = NeutralDark,
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+
+                displayItems.isEmpty() -> Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 32.dp),
@@ -168,7 +191,7 @@ fun ClosetListScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    items(filteredItems) { item ->
+                    items(displayItems) { item ->
                         AsyncImage(
                             model = "${StyloApi.BASE_URL}${item.imageUrl}",
                             contentDescription = item.description,
@@ -184,10 +207,19 @@ fun ClosetListScreen(
 
             FloatingSearchBar(
                 searchText = searchText,
-                onSearchChange = { searchText = it },
+                onSearchChange = { text ->
+                    searchText = text
+                    if (text.isEmpty()) searchResults = null
+                },
                 onSearch = {
-                    // TODO: 接入语义搜索 API
-                    android.util.Log.d("ClosetListScreen", "Search submitted: $searchText")
+                    val query = searchText.trim()
+                    if (query.isNotEmpty()) {
+                        isSearching = true
+                        StyloApi.fetchClosetSearch(query) { items, _ ->
+                            isSearching = false
+                            searchResults = items ?: emptyList()
+                        }
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -346,7 +378,6 @@ private fun FloatingSearchBar(
                     fontSize = 14.sp
                 )
             }
-            // TODO: 接入语义搜索 API
             BasicTextField(
                 value = searchText,
                 onValueChange = onSearchChange,

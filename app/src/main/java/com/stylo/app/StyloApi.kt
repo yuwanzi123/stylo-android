@@ -23,6 +23,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.net.URLEncoder
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -68,6 +69,24 @@ data class ChatHistoryMessage(
     val compositeImageUrl: String?,
     val items: List<OutfitItem>,
 )
+
+private fun parseClosetItems(arr: JSONArray?): List<ClosetItem> {
+    val items = mutableListOf<ClosetItem>()
+    arr ?: return items
+    for (i in 0 until arr.length()) {
+        val obj = arr.getJSONObject(i)
+        items.add(
+            ClosetItem(
+                id          = obj.optInt("id"),
+                filename    = obj.optString("filename"),
+                imageUrl    = obj.optString("image_url"),
+                description = obj.optString("description"),
+                category    = obj.optString("category").takeIf { it.isNotEmpty() },
+            )
+        )
+    }
+    return items
+}
 
 private fun parseOutfitItems(arr: JSONArray?): List<OutfitItem> {
     val items = mutableListOf<OutfitItem>()
@@ -230,22 +249,31 @@ object StyloApi {
                 val body = response.body?.string()
                 try {
                     val json = JSONObject(body ?: "{}")
-                    val arr = json.optJSONArray("items")
-                    val items = mutableListOf<ClosetItem>()
-                    arr?.let {
-                        for (i in 0 until it.length()) {
-                            val obj = it.getJSONObject(i)
-                            items.add(
-                                ClosetItem(
-                                    id          = obj.optInt("id"),
-                                    filename    = obj.optString("filename"),
-                                    imageUrl    = obj.optString("image_url"),
-                                    description = obj.optString("description"),
-                                    category    = obj.optString("category").takeIf { it.isNotEmpty() },
-                                )
-                            )
-                        }
-                    }
+                    val items = parseClosetItems(json.optJSONArray("items"))
+                    Handler(Looper.getMainLooper()).post { onResult(items, null) }
+                } catch (e: Exception) {
+                    Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+                }
+            }
+        })
+    }
+
+    // Semantic search over closet item descriptions (embedding cosine similarity, backend-side).
+    fun fetchClosetSearch(query: String, onResult: (items: List<ClosetItem>?, error: String?) -> Unit) {
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val request = Request.Builder()
+            .url("$BASE_URL/closet/search?q=$encodedQuery")
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                try {
+                    val json = JSONObject(body ?: "{}")
+                    val items = parseClosetItems(json.optJSONArray("items"))
                     Handler(Looper.getMainLooper()).post { onResult(items, null) }
                 } catch (e: Exception) {
                     Handler(Looper.getMainLooper()).post { onResult(null, e.message) }
