@@ -93,14 +93,23 @@ private val NeutralDark     = Color(0xFF5F5E5A)
 
 // ── Conversation data ────────────────────────────────────────────────────────
 private sealed class ChatItem {
-    data class UserMsg(val text: String) : ChatItem()
-    data class AiMsg(val text: String) : ChatItem()
+    data class UserMsg(val text: String, val timestampMillis: Long = System.currentTimeMillis()) : ChatItem()
+    data class AiMsg(val text: String, val timestampMillis: Long = System.currentTimeMillis()) : ChatItem()
     data class OutfitCardItem(
         val caption: String,
         val compositeImageUrl: String,
         val items: List<OutfitItem>,
+        val timestampMillis: Long = System.currentTimeMillis(),
     ) : ChatItem()
 }
+
+private val ChatTimestampFormatter: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+private fun formatChatTimestamp(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .format(ChatTimestampFormatter)
 
 // ── Root screen ───────────────────────────────────────────────────────────────
 @Composable
@@ -148,16 +157,18 @@ fun HomeScreen(
         StyloApi.fetchChatHistory(userId) { history, _ ->
             historyMessages.clear()
             history?.forEach { m ->
+                val ts = m.createdAtMillis ?: System.currentTimeMillis()
                 when {
-                    m.role == "user" -> historyMessages.add(ChatItem.UserMsg(m.content ?: ""))
+                    m.role == "user" -> historyMessages.add(ChatItem.UserMsg(m.content ?: "", ts))
                     m.type == "outfit_card" -> historyMessages.add(
                         ChatItem.OutfitCardItem(
                             caption = m.caption ?: "",
                             compositeImageUrl = m.compositeImageUrl ?: "",
                             items = m.items,
+                            timestampMillis = ts,
                         )
                     )
-                    else -> historyMessages.add(ChatItem.AiMsg(m.content ?: ""))
+                    else -> historyMessages.add(ChatItem.AiMsg(m.content ?: "", ts))
                 }
             }
             historyFetched = true
@@ -179,6 +190,7 @@ fun HomeScreen(
                         caption = result.caption ?: "",
                         compositeImageUrl = result.compositeImageUrl ?: "",
                         items = result.items,
+                        timestampMillis = result.createdAtMillis ?: System.currentTimeMillis(),
                     )
                 )
             } else {
@@ -539,78 +551,100 @@ private fun TopBar(
 @Composable
 private fun ChatItemRow(item: ChatItem) {
     when (item) {
-        is ChatItem.UserMsg -> UserBubble(item.text)
-        is ChatItem.AiMsg -> AiTextMessage(item.text)
+        is ChatItem.UserMsg -> UserBubble(item.text, item.timestampMillis)
+        is ChatItem.AiMsg -> AiTextMessage(item.text, item.timestampMillis)
         is ChatItem.OutfitCardItem -> OutfitCard(item)
     }
 }
 
 @Composable
-private fun UserBubble(text: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 260.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 16.dp, topEnd = 16.dp,
-                        bottomStart = 16.dp, bottomEnd = 4.dp
+private fun ChatTimestamp(millis: Long, alignEnd: Boolean) {
+    Text(
+        text = formatChatTimestamp(millis),
+        color = NeutralMid,
+        fontSize = 11.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 3.dp, start = if (alignEnd) 0.dp else 2.dp, end = if (alignEnd) 2.dp else 0.dp),
+        textAlign = if (alignEnd) TextAlign.End else TextAlign.Start
+    )
+}
+
+@Composable
+private fun UserBubble(text: String, timestampMillis: Long) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 260.dp)
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = 16.dp, topEnd = 16.dp,
+                            bottomStart = 16.dp, bottomEnd = 4.dp
+                        )
                     )
-                )
-                .background(NeutralLight)   // #F1EFE8 — never purple
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-        ) {
-            Text(text = text, color = BrandDeepPurple, fontSize = 15.sp, lineHeight = 21.sp)
+                    .background(NeutralLight)   // #F1EFE8 — never purple
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Text(text = text, color = BrandDeepPurple, fontSize = 15.sp, lineHeight = 21.sp)
+            }
         }
+        ChatTimestamp(timestampMillis, alignEnd = true)
     }
 }
 
 @Composable
-private fun AiTextMessage(text: String) {
+private fun AiTextMessage(text: String, timestampMillis: Long) {
     // No bubble background — plain text, left-aligned
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-        Text(
-            text = text,
-            color = NeutralDark,            // #5F5E5A
-            fontSize = 15.sp,
-            lineHeight = 22.sp,
-            modifier = Modifier.widthIn(max = 280.dp)
-        )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+            Text(
+                text = text,
+                color = NeutralDark,            // #5F5E5A
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
+                modifier = Modifier.widthIn(max = 280.dp)
+            )
+        }
+        ChatTimestamp(timestampMillis, alignEnd = false)
     }
 }
 
 // ── Outfit card ────────────────────────────────────────────────────────────────
 @Composable
 private fun OutfitCard(item: ChatItem.OutfitCardItem) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, NeutralMid)     // #D3D1C7
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            if (item.compositeImageUrl.isNotEmpty()) {
-                AsyncImage(
-                    model = "${StyloApi.BASE_URL}${item.compositeImageUrl}",
-                    contentDescription = "Outfit preview",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(240.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(BrandLightPurple)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-            if (item.caption.isNotEmpty()) {
-                Text(
-                    text = item.caption,
-                    color = NeutralDark,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            border = BorderStroke(1.dp, NeutralMid)     // #D3D1C7
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                if (item.compositeImageUrl.isNotEmpty()) {
+                    AsyncImage(
+                        model = "${StyloApi.BASE_URL}${item.compositeImageUrl}",
+                        contentDescription = "Outfit preview",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(BrandLightPurple)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+                if (item.caption.isNotEmpty()) {
+                    Text(
+                        text = item.caption,
+                        color = NeutralDark,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                }
             }
         }
+        ChatTimestamp(item.timestampMillis, alignEnd = false)
     }
 }
 

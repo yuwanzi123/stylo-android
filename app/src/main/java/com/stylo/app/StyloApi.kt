@@ -58,6 +58,7 @@ data class ChatOutfitResult(
     val caption: String?,
     val compositeImageUrl: String?,
     val items: List<OutfitItem>,
+    val createdAtMillis: Long?,
 )
 
 data class ChatHistoryMessage(
@@ -69,7 +70,18 @@ data class ChatHistoryMessage(
     val caption: String?,
     val compositeImageUrl: String?,
     val items: List<OutfitItem>,
+    val createdAtMillis: Long?,
 )
+
+// 后端 created_at 是 datetime.utcnow().isoformat()（无时区信息的 naive UTC 字符串），按 UTC 解析
+private fun parseIsoToMillis(iso: String?): Long? {
+    if (iso.isNullOrEmpty()) return null
+    return try {
+        java.time.LocalDateTime.parse(iso).toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+    } catch (e: Exception) {
+        null
+    }
+}
 
 private fun parseClosetItems(arr: JSONArray?): List<ClosetItem> {
     val items = mutableListOf<ClosetItem>()
@@ -169,6 +181,7 @@ object StyloApi {
                         caption = json.optString("caption").takeIf { it.isNotEmpty() },
                         compositeImageUrl = json.optString("composite_image_url").takeIf { it.isNotEmpty() },
                         items = parseOutfitItems(json.optJSONArray("items")),
+                        createdAtMillis = parseIsoToMillis(json.optString("created_at").takeIf { it.isNotEmpty() }),
                     )
                     Handler(Looper.getMainLooper()).post { onResult(result, null) }
                 } catch (e: Exception) {
@@ -209,6 +222,7 @@ object StyloApi {
                                     caption = obj.optString("caption").takeIf { c -> c.isNotEmpty() },
                                     compositeImageUrl = obj.optString("composite_image_url").takeIf { c -> c.isNotEmpty() },
                                     items = parseOutfitItems(obj.optJSONArray("items")),
+                                    createdAtMillis = parseIsoToMillis(obj.optString("created_at").takeIf { c -> c.isNotEmpty() }),
                                 )
                             )
                         }
