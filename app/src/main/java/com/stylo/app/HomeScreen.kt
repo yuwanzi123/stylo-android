@@ -81,6 +81,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
@@ -613,6 +615,18 @@ private fun AiTextMessage(text: String, timestampMillis: Long) {
 // ── Outfit card ────────────────────────────────────────────────────────────────
 @Composable
 private fun OutfitCard(item: ChatItem.OutfitCardItem) {
+    val imageUrl = "${StyloApi.BASE_URL}${item.compositeImageUrl}"
+    var showFullscreenImage by remember { mutableStateOf(false) }
+
+    if (showFullscreenImage) {
+        Dialog(
+            onDismissRequest = { showFullscreenImage = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            ZoomableFullscreenImage(url = imageUrl, onDismiss = { showFullscreenImage = false })
+        }
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -623,7 +637,7 @@ private fun OutfitCard(item: ChatItem.OutfitCardItem) {
             Column(modifier = Modifier.padding(16.dp)) {
                 if (item.compositeImageUrl.isNotEmpty()) {
                     AsyncImage(
-                        model = "${StyloApi.BASE_URL}${item.compositeImageUrl}",
+                        model = imageUrl,
                         contentDescription = "Outfit preview",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
@@ -631,6 +645,7 @@ private fun OutfitCard(item: ChatItem.OutfitCardItem) {
                             .height(240.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(BrandLightPurple)
+                            .clickable { showFullscreenImage = true }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
