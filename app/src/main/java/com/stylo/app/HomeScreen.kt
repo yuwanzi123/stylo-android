@@ -204,8 +204,17 @@ fun HomeScreen(
     LaunchedEffect(messages.size, isAiTyping) {
         if (messages.isNotEmpty()) {
             delay(50)
-            val total = messages.size + (if (isAiTyping) 1 else 0)
+            val historyCount = if (historyVisible) historyMessages.size else 0
+            val total = historyCount + messages.size + (if (isAiTyping) 1 else 0)
             listState.animateScrollToItem(total - 1)
+        }
+    }
+
+    // When history is shown, jump to the newest message so older ones are reached by scrolling up
+    LaunchedEffect(historyVisible) {
+        if (historyVisible) {
+            val total = historyMessages.size + messages.size + (if (isAiTyping) 1 else 0)
+            if (total > 0) listState.scrollToItem(total - 1)
         }
     }
 
