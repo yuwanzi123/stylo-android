@@ -142,13 +142,13 @@ fun ReviewResultsScreen(
         )
     }
 
-    // 全屏大图查看 Dialog（支持双指缩放/拖动/双击还原）
+    // 全屏大图查看 Dialog（固定不可拖动，单击退出）
     fullscreenImageUrl?.let { url ->
         Dialog(
             onDismissRequest = { fullscreenImageUrl = null },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            ZoomableFullscreenImage(url = url, onDismiss = { fullscreenImageUrl = null })
+            FullscreenImage(url = url, onDismiss = { fullscreenImageUrl = null })
         }
     }
 }

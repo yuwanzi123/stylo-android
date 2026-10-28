@@ -131,7 +131,7 @@ fun ItemDetailScreen(
             onDismissRequest = { showFullscreenImage = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            ZoomableFullscreenImage(url = imageUrl, onDismiss = { showFullscreenImage = false })
+            FullscreenImage(url = imageUrl, onDismiss = { showFullscreenImage = false })
         }
     }
 
